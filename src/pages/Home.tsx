@@ -11,6 +11,7 @@ export default function Home() {
   const cfg = useShop()
   const { data: services = [], isLoading } = useServices(cfg.id)
   const [cls, setCls] = useState<VehicleClass>('sedan')
+
   return (
     <>
       <header className="relative h-[75vh] min-h-[460px] overflow-hidden">
@@ -86,6 +87,16 @@ export default function Home() {
             ))}
           </div>
         </Reveal>
+
+        {/* Скрытая ссылка в админку для владельцев */}
+        <div className="mt-16 text-center pb-8">
+          <Link
+            to={`/s/${cfg.id}/admin`}
+            className="text-xs text-white/20 hover:text-white/60 transition-colors"
+          >
+            Вход для сотрудников
+          </Link>
+        </div>
       </main>
 
       <Link to={`/s/${cfg.id}/book`}
