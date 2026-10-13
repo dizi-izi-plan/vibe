@@ -1,0 +1,2471 @@
+================================================================================
+### ФАЙЛ: DEPLOY.md
+================================================================================
+# Деплой за 15–20 минут
+
+## 1. Supabase
+1. supabase.com → **New project** (регион ближе к клиентам), задайте пароль БД.
+2. **SQL Editor → New query** → вставьте `supabase/schema.sql` → **Run**.
+3. Новый запрос → вставьте `supabase/seed.sql` → **Run** (демо-данные для точки `demo`).
+4. **Authentication → Users → Add user** → email + пароль владельца (отметьте *Auto Confirm*). Скопируйте UUID пользователя.
+5. SQL Editor: `update shops set owner_id = '<UUID>' where id = 'demo';`
+6. **Authentication → Providers → Email**: отключите *Allow new users to sign up*, чтобы никто не регистрировался сам.
+7. **Project Settings → API**: скопируйте *Project URL* и ключ *anon public*.
+
+## 2. Локальная проверка
+```bash
+cp .env.example .env     # вставьте URL и anon-ключ
+pnpm install
+pnpm dev                 # http://localhost:5173/s/demo
+```
+
+## 3. Vercel
+1. Залейте проект в GitHub. На vercel.com → **Add New → Project** → выберите репозиторий (Framework: Vite, определится сам).
+2. **Environment Variables**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+3. **Deploy**. Сайт будет по адресу `https://<проект>.vercel.app/s/demo`.
+4. Для PWA: откройте сайт на телефоне → «Добавить на главный экран». Замените `public/icon-192.png` и `icon-512.png` своими иконками.
+
+## 4. Новая автомастерская
+```bash
+pnpm new-tenant mojka-ivanova
+```
+Скрипт создаст `src/tenants/mojka-ivanova/config.ts` и `supabase/tenant_mojka-ivanova.sql`.
+Отредактируйте конфиг, выполните SQL в Supabase, привяжите владельца (`update shops set owner_id=…`), сделайте push. Сайт: `/s/mojka-ivanova`.
+(Для отдельного домена на точку — добавьте домен в Vercel и редирект на `/s/<shop_id>`.)
+
+## Проверка защиты от овербукинга
+В SQL Editor вызовите `select * from create_appointment(...)` дважды на одно время при одном активном боксе: вторая попытка вернёт ошибку `slot_taken`.
+================================================================================
+### ФАЙЛ: index.html
+================================================================================
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0A0A0A" />
+  <title>Онлайн-запись</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet" />
+</head>
+<body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+</html>
+================================================================================
+### ФАЙЛ: package.json
+================================================================================
+{
+  "name": "autoservice-booking",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "new-tenant": "node scripts/new-tenant.mjs"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
+    "@supabase/supabase-js": "^2.45.4",
+    "@tanstack/react-query": "^5.59.0",
+    "date-fns": "^3.6.0",
+    "date-fns-tz": "^3.2.0",
+    "framer-motion": "^11.11.0",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.53.0",
+    "react-router-dom": "^6.28.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vite-plugin-pwa": "^0.20.5"
+  }
+}
+================================================================================
+### ФАЙЛ: pnpm-workspace.yaml
+================================================================================
+allowBuilds:
+  esbuild: true
+================================================================================
+### ФАЙЛ: postcss.config.js
+================================================================================
+export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
+================================================================================
+### ФАЙЛ: tailwind.config.js
+================================================================================
+export default {
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: { extend: {
+    colors: { ink: '#0A0A0A', accent: 'var(--accent)' },
+    fontFamily: { display: ['"Barlow Condensed"', 'Impact', 'sans-serif'], sans: ['Barlow', 'system-ui', 'sans-serif'] }
+  } },
+  plugins: []
+}
+================================================================================
+### ФАЙЛ: tsconfig.json
+================================================================================
+{"compilerOptions":{"target":"ES2020","lib":["ES2020","DOM","DOM.Iterable"],"module":"ESNext","moduleResolution":"bundler","jsx":"react-jsx","strict":true,"noEmit":true,"skipLibCheck":true,"isolatedModules":true,"types":["vite/client"],"baseUrl":".","paths":{"@/*":["src/*"]}},"include":["src"]}
+================================================================================
+### ФАЙЛ: vercel.json
+================================================================================
+{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+================================================================================
+### ФАЙЛ: vite.config.ts
+================================================================================
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath, URL } from 'node:url'
+
+export default defineConfig({
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: {
+        name: 'Запись в автосервис',
+        short_name: 'Автосервис',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#0A0A0A',
+        theme_color: '#0A0A0A',
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+        ]
+      },
+      workbox: { navigateFallbackDenylist: [/^\/rest/, /^\/auth/] }
+    })
+  ]
+})
+================================================================================
+### ФАЙЛ: src/index.css
+================================================================================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root { --accent: #FF4D00; }
+html, body { background: #0A0A0A; color: #fff; font-family: Barlow, system-ui, sans-serif; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+================================================================================
+### ФАЙЛ: src/main.tsx
+================================================================================
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import './index.css'
+import { ShopLayout } from './components/ShopLayout'
+import Home from './pages/Home'
+import Booking from './pages/Booking'
+import MyBooking from './pages/MyBooking'
+
+const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } })
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <QueryClientProvider client={qc}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/s/:shopId" element={<ShopLayout />}>
+            <Route index element={<Home />} />
+            <Route path="book" element={<Booking />} />
+            <Route path="my" element={<MyBooking />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/s/demo" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
+  </React.StrictMode>
+)
+================================================================================
+### ФАЙЛ: src/components/Reveal.tsx
+================================================================================
+import { motion } from 'framer-motion'
+import type { ReactNode } from 'react'
+
+export const Reveal = ({ children }: { children: ReactNode }) => (
+  <motion.section initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true, margin: '-40px' }} transition={{ duration: 0.5 }}>
+    {children}
+  </motion.section>
+)
+================================================================================
+### ФАЙЛ: src/components/ShopLayout.tsx
+================================================================================
+import { createContext, useContext, useEffect, type CSSProperties } from 'react'
+import { NavLink, Outlet, useParams } from 'react-router-dom'
+import { Home, Wrench, CalendarCheck } from 'lucide-react'
+import { tenants } from '@/tenants'
+import type { TenantConfig } from '@/tenants/types'
+
+const Ctx = createContext<TenantConfig | null>(null)
+export const useShop = () => {
+  const c = useContext(Ctx)
+  if (!c) throw new Error('useShop outside ShopLayout')
+  return c
+}
+
+export function ShopLayout() {
+  const { shopId = '' } = useParams()
+  const cfg = tenants[shopId]
+  useEffect(() => { if (cfg) document.title = `${cfg.name} — онлайн-запись` }, [cfg])
+  if (!cfg) return <div className="p-8 text-white/70">Точка не найдена</div>
+  const base = `/s/${cfg.id}`
+  const items = [
+    { to: base, label: 'Главная', icon: Home, end: true },
+    { to: `${base}/book`, label: 'Услуги', icon: Wrench, end: false },
+    { to: `${base}/my`, label: 'Моя запись', icon: CalendarCheck, end: false }
+  ]
+  return (
+    <Ctx.Provider value={cfg}>
+      <div style={{ '--accent': cfg.accent } as CSSProperties} className="min-h-screen pb-28">
+        <Outlet />
+        <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-white/10 bg-black/50 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+          {items.map(({ to, label, icon: Icon, end }) => (
+            <NavLink key={to} to={to} end={end}
+              className={({ isActive }) => `flex flex-1 flex-col items-center gap-1 py-3 text-xs ${isActive ? 'text-accent' : 'text-white/70'}`}>
+              <Icon size={22} />{label}
+            </NavLink>
+          ))}
+        </nav>
+      </div>
+    </Ctx.Provider>
+  )
+}
+================================================================================
+### ФАЙЛ: src/tenants/defaults.ts
+================================================================================
+import type { TenantConfig } from './types'
+
+export const DEFAULT_CLASSES: TenantConfig['vehicleClasses'] = [
+  { id: 'sedan', label: 'Седан' },
+  { id: 'crossover', label: 'Кроссовер' },
+  { id: 'minivan', label: 'Микроавтобус' }
+]
+export const DEFAULT_FAQ: TenantConfig['faq'] = [
+  { q: 'Как записаться?', a: 'Выберите услугу, класс авто и свободное время — запись подтвердится сразу.' },
+  { q: 'Можно ли отменить запись?', a: 'Да, в разделе «Моя запись». Если не получается — позвоните нам.' },
+  { q: 'Как узнать точную стоимость?', a: 'Цена в записи ориентировочная. Итог зависит от состояния автомобиля — мастер согласует его до начала работ.' }
+]
+================================================================================
+### ФАЙЛ: src/tenants/index.ts
+================================================================================
+import type { TenantConfig } from './types'
+
+const mods = import.meta.glob<{ config: TenantConfig }>('./*/config.ts', { eager: true })
+export const tenants: Record<string, TenantConfig> = Object.fromEntries(
+  Object.values(mods).map((m) => [m.config.id, m.config])
+)
+================================================================================
+### ФАЙЛ: src/tenants/types.ts
+================================================================================
+export type VehicleClass = 'sedan' | 'crossover' | 'minivan'
+export interface TenantConfig {
+  id: string
+  name: string
+  tagline: string
+  description: string
+  phone: string
+  address: string
+  hours: string
+  timezone: string
+  currency: string
+  accent: string
+  heroImage?: string
+  whatsapp?: string
+  telegram?: string
+  twoGis?: string
+  rating?: string
+  reviews?: string
+  vehicleClasses: { id: VehicleClass; label: string }[]
+  faq: { q: string; a: string }[]
+}
+================================================================================
+### ФАЙЛ: src/tenants/avtoservis-36/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "avtoservis-36",
+  name: "avtoservis_36",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "avtoservis_36 — легковой автосервис (Воронеж). Работаем с: обслуживание автомобильных климатических систем, ремонт ходовой части автомобиля, ремонт дизельных двигателей, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 950 773-97-68",
+  address: "Волгоградская улица, 43а/3, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  whatsapp: "https://wa.me/79507739768",
+  twoGis: "https://2gis.com/firm/70000001029822023",
+  rating: "4.8",
+  reviews: "17",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/astra-motors/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "astra-motors",
+  name: "Astra Motors",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Astra Motors — легковой автосервис (Воронеж). Работаем с: развал-схождение, автосигнализации, ремонт ходовой части автомобиля, ремонт выхлопных систем. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 227-28-27",
+  address: "Солнечная улица, 13Б, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  twoGis: "https://2gis.com/firm/70000001090643619",
+  rating: "4.4",
+  reviews: "5",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/autogear/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "autogear",
+  name: "AutoGear",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "AutoGear — легковой автосервис (Воронеж). Работаем с: шиномонтаж, ремонт стартеров и генераторов, компьютерная диагностика автомобилей, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 291-40-93",
+  address: "проспект Патриотов, 29, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  twoGis: "https://2gis.com/firm/70000001028047080",
+  rating: "4.2",
+  reviews: "13",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/carbox7/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "carbox7",
+  name: "CarBox7",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "CarBox7 — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, ремонт бензиновых двигателей, ремонт инжекторов, замена масла. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 929 011-44-66",
+  address: "Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  whatsapp: "https://wa.me/79290114466",
+  telegram: "https://t.me/+79290114466",
+  twoGis: "https://2gis.com/firm/70000001089532063",
+  rating: "5",
+  reviews: "1",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/1996/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "1996",
+  name: "1996",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "1996 — легковой автосервис (Семилуки). Работаем с: развал-схождение, замена масла, ремонт ходовой части автомобиля, шиномонтаж. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 920 413-60-88",
+  address: "улица Ленина, 15, Семилуки",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  whatsapp: "https://wa.me/79204136088",
+  twoGis: "https://2gis.com/firm/70000001040746342",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/autohunter/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "autohunter",
+  name: "Autohunter",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Autohunter — легковой автосервис (Воронеж). Работаем с: шиномонтаж, замена масла, развал-схождение, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 906 582-48-99",
+  address: "Планетная улица, 6, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  whatsapp: "https://wa.me/79507633220",
+  telegram: "https://t.me/+79507633220",
+  twoGis: "https://2gis.com/firm/70000001032772257",
+  rating: "4.7",
+  reviews: "23",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/beep-stop/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "beep-stop",
+  name: "Beep-Stop",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Beep-Stop — легковой автосервис (Воронеж). Работаем с: шиномонтаж, компьютерная диагностика автомобилей, ремонт ходовой части автомобиля, кузовной ремонт. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 952 544-51-31",
+  address: "Острогожская улица, 69в, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79525445131",
+  telegram: "https://t.me/+79525445131",
+  twoGis: "https://2gis.com/firm/70000001081102805",
+  rating: "5",
+  reviews: "1",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/a1/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "a1",
+  name: "A1",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "A1 — легковой автосервис (Воронеж). Работаем с: автомойки, шиномонтаж, замена масла, обслуживание автомобильных климатических систем. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 333-50-58",
+  address: "улица Антонова-Овсеенко, 37/7, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  whatsapp: "https://wa.me/79515419280",
+  twoGis: "https://2gis.com/firm/70000001028266261",
+  rating: "4.3",
+  reviews: "44",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/avto-reviz/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "avto-reviz",
+  name: "Avto Reviz",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Avto Reviz — легковой автосервис (Воронеж). Работаем с: ремонт стартеров и генераторов, ремонт электронных систем авто, ремонт ходовой части автомобиля, компьютерная диагностика автомобилей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 951 567-56-85",
+  address: "улица Хользунова, 91а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  whatsapp: "https://wa.me/79515675685",
+  telegram: "https://t.me/+79518700348",
+  twoGis: "https://2gis.com/firm/70000001038242268",
+  rating: "5",
+  reviews: "16",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/aservise/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "aservise",
+  name: "Aservise",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Aservise — легковой автосервис (Воронеж). Работаем с: замена масла, компьютерная диагностика автомобилей, ремонт бензиновых двигателей, обслуживание автомобильных климатических систем. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 910 288-43-43",
+  address: "улица Хользунова, 97, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  whatsapp: "https://wa.me/79102884343",
+  twoGis: "https://2gis.com/firm/70000001060033201",
+  rating: "4",
+  reviews: "9",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/avto-srs/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "avto-srs",
+  name: "Aвто srs",
+  tagline: "Тюнинг. Онлайн-запись без звонков.",
+  description: "Aвто srs — тюнинг (Воронеж). Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 920 447-12-12",
+  address: "Холмистая улица, 56в, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  whatsapp: "https://wa.me/79204471212",
+  twoGis: "https://2gis.com/firm/70000001032643213",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/black-fish-36/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "black-fish-36",
+  name: "Black fish 36",
+  tagline: "Тюнинг. Онлайн-запись без звонков.",
+  description: "Black fish 36 — тюнинг (Воронеж). Работаем с: антикоррозийная обработка авто, автозвук, ремонт ходовой части автомобиля. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 900 300-53-43",
+  address: "улица Конструкторов, 60а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  whatsapp: "https://wa.me/79003005343",
+  telegram: "https://t.me/+79003005343",
+  twoGis: "https://2gis.com/firm/70000001082913886",
+  rating: "5",
+  reviews: "3",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/body-style/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "body-style",
+  name: "Body Style",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Body Style — легковой автосервис (Воронеж). Работаем с: кузовной ремонт, ремонт ходовой части автомобиля, обслуживание автомобильных климатических систем, ремонт дизельных двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 910 241-41-41",
+  address: "Рижская улица, 16 к7, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  whatsapp: "https://wa.me/79102414141",
+  twoGis: "https://2gis.com/firm/70000001044548164",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/9-avenue/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "9-avenue",
+  name: "9 Avenue",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "9 Avenue — легковой автосервис (Воронеж). Работаем с: ремонт дизельных двигателей, шиномонтаж, ремонт ходовой части автомобиля, ремонт стартеров и генераторов. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 952 953-65-56",
+  address: "улица 9 Января, 221е/1, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  telegram: "https://t.me/avenuevoronezh",
+  twoGis: "https://2gis.com/firm/70000001040896973",
+  rating: "4.5",
+  reviews: "63",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/12-vol-t/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "12-vol-t",
+  name: "12 вольт",
+  tagline: "Обслуживание автомобильных климатических систем. Онлайн-запись без звонков.",
+  description: "12 вольт — обслуживание автомобильных климатических систем (Воронеж). Работаем с: ремонт электронных систем авто, компьютерная диагностика автомобилей, автосигнализации, автозвук. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 910 243-64-60",
+  address: "улица Академика Королёва, 22, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  whatsapp: "https://wa.me/79102436460",
+  twoGis: "https://2gis.com/firm/70000001059091519",
+  rating: "5",
+  reviews: "3",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/box-13/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "box-13",
+  name: "Box 13",
+  tagline: "Запчасти для иномарок. Онлайн-запись без звонков.",
+  description: "Box 13 — запчасти для иномарок (Воронеж). Работаем с: ремонт ходовой части автомобиля. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 950 750-76-69",
+  address: "улица Строителей, 8Б, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  whatsapp: "https://wa.me/79507507669",
+  twoGis: "https://2gis.com/firm/70000001053776675",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/carhelp/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "carhelp",
+  name: "Carhelp",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Carhelp — легковой автосервис (Воронеж). Работаем с: шиномонтаж, ремонт ходовой части автомобиля, ремонт стартеров и генераторов, кузовной ремонт. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 920 228-68-81",
+  address: "улица Шишкова, 77/2, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79202286881",
+  twoGis: "https://2gis.com/firm/70000001026932258",
+  rating: "4.1",
+  reviews: "18",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/alliance/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "alliance",
+  name: "Alliance",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Alliance — легковой автосервис (Воронеж). Работаем с: запчасти для иномарок, автоаксессуары, ремонт ходовой части автомобиля, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 224-51-16",
+  address: "улица 9 Января, 260/1, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  twoGis: "https://2gis.com/firm/4363390420300840",
+  rating: "5",
+  reviews: "3",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/avtomatik-vrn/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "avtomatik-vrn",
+  name: "Avtomatik vrn",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Avtomatik vrn — легковой автосервис (Семилуки). Работаем с: ремонт ходовой части автомобиля, компьютерная диагностика автомобилей, ремонт акпп, шиномонтаж. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 952 954-04-35",
+  address: "2-я Заречная улица, 38а, Семилуки",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  whatsapp: "https://wa.me/79009241783",
+  twoGis: "https://2gis.com/firm/70000001059929003",
+  rating: "3",
+  reviews: "3",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/autolightsworkshop/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "autolightsworkshop",
+  name: "AutoLightsWorkshop",
+  tagline: "Установка и ремонт автооптики. Онлайн-запись без звонков.",
+  description: "AutoLightsWorkshop — установка и ремонт автооптики (Воронеж). Работаем с: автоаксессуары. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 920 447-26-08",
+  address: "улица Антонова-Овсеенко, 28д, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79204472608",
+  twoGis: "https://2gis.com/firm/70000001100293182",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/avbmotorsport/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "avbmotorsport",
+  name: "Avbmotorsport",
+  tagline: "Ремонт карбюраторов. Онлайн-запись без звонков.",
+  description: "Avbmotorsport — ремонт карбюраторов (Воронеж). Работаем с: компьютерная диагностика автомобилей, ремонт инжекторов. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 920 455-54-63",
+  address: "переулок Здоровья, 8, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  whatsapp: "https://wa.me/79204555463",
+  twoGis: "https://2gis.com/firm/70000001033489545",
+  rating: "1.4",
+  reviews: "1",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/carzone/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "carzone",
+  name: "Carzone",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Carzone — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, ремонт дизельных двигателей, ремонт бензиновых двигателей, ремонт акпп. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 202-17-81",
+  address: "Ленинградская улица, 29д, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  whatsapp: "https://wa.me/79009587201",
+  twoGis: "https://2gis.com/firm/70000001046145596",
+  rating: "4",
+  reviews: "32",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/beautiful-car/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "beautiful-car",
+  name: "Beautiful car",
+  tagline: "Кузовной ремонт. Онлайн-запись без звонков.",
+  description: "Beautiful car — кузовной ремонт (Воронеж). Работаем с: шиномонтаж, ремонт ходовой части автомобиля, замена масла, тюнинг. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 251-75-74",
+  address: "Ростовская улица, 78/3а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  twoGis: "https://2gis.com/firm/70000001018000038",
+  rating: "5",
+  reviews: "6",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/breach-auto/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "breach-auto",
+  name: "Breach Auto",
+  tagline: "Грузовой автосервис. Онлайн-запись без звонков.",
+  description: "Breach Auto — грузовой автосервис (Воронеж). Работаем с: кузовной ремонт, сварочные работы, ремонт и тюнинг мототехники, ремонт ходовой части автомобиля. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 951 855-83-25",
+  address: "улица 9 Января, 211/6, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  whatsapp: "https://wa.me/79518558325",
+  telegram: "https://t.me/+79518558325",
+  twoGis: "https://2gis.com/firm/70000001101450607",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/cepsa/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "cepsa",
+  name: "Cepsa",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Cepsa — легковой автосервис (Воронеж). Работаем с: шиномонтаж, ремонт ходовой части автомобиля, замена масла, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 900 928-97-94",
+  address: "улица Щёголевых, 12в, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  whatsapp: "https://wa.me/79601175531",
+  twoGis: "https://2gis.com/firm/70000001033444432",
+  rating: "5",
+  reviews: "3",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/dg-service/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "dg-service",
+  name: "Dg_Service",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Dg_Service — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, замена масла, компьютерная диагностика автомобилей, ремонт выхлопных систем. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 900 300-30-60",
+  address: "Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  whatsapp: "https://wa.me/79529592255",
+  telegram: "https://t.me/+79529592255",
+  twoGis: "https://2gis.com/firm/70000001091237894",
+  rating: "5",
+  reviews: "77",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/800-oborotov-oyl/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "800-oborotov-oyl",
+  name: "800 оборотов-ойл",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "800 оборотов-ойл — легковой автосервис (Воронеж). Работаем с: замена масла, ремонт ходовой части автомобиля, запчасти для иномарок, шины и диски. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 256-64-65",
+  address: "Монтажный проезд, 1д/1, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  whatsapp: "https://wa.me/79529566465",
+  twoGis: "https://2gis.com/firm/70000001006142606",
+  rating: "4.3",
+  reviews: "13",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/bbs/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "bbs",
+  name: "BBS",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "BBS — легковой автосервис (Воронеж). Работаем с: детейлинг, замена масла, компьютерная диагностика автомобилей, развал-схождение. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 960 124-36-36",
+  address: "2-я Коминтерновская улица, 22/3, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79601143636",
+  twoGis: "https://2gis.com/firm/70000001100282981",
+  rating: "5",
+  reviews: "2",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/black-bear-garage/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "black-bear-garage",
+  name: "Black Bear Garage",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Black Bear Garage — легковой автосервис (Воронеж). Работаем с: замена масла, ремонт акпп, ремонт мкпп, ремонт ходовой части автомобиля. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 900 946-64-65",
+  address: "Новосибирская улица, 82, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  twoGis: "https://2gis.com/firm/70000001109867165",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/1911/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "1911",
+  name: "1911",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "1911 — легковой автосервис (Воронеж). Работаем с: замена масла, компьютерная диагностика автомобилей, ремонт стартеров и генераторов, ремонт мкпп. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 996 451-00-08",
+  address: "улица Грамши, 73, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  twoGis: "https://2gis.com/firm/70000001117512263",
+  rating: "5",
+  reviews: "4",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/789/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "789",
+  name: "789",
+  tagline: "Обслуживание автомобильных климатических систем. Онлайн-запись без звонков.",
+  description: "789 — обслуживание автомобильных климатических систем (Воронеж). Работаем с: ремонт стартеров и генераторов, ремонт турбин, хранение шин, ремонт дизельных двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 919 180-63-62",
+  address: "Ольховая улица, 7а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  twoGis: "https://2gis.com/firm/70000001103006246",
+  rating: "5",
+  reviews: "3",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/4x4-vrn/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "4x4-vrn",
+  name: "4x4 vrn",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "4x4 vrn — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, ремонт дизельных двигателей, ремонт бензиновых двигателей, запчасти для иномарок. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 906 590-49-00",
+  address: "Ольховый переулок, 1а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79529537665",
+  twoGis: "https://2gis.com/firm/70000001025766805",
+  rating: "4.2",
+  reviews: "14",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/ard/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "ard",
+  name: "Ard",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Ard — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, замена масла, ремонт бензиновых двигателей, ремонт дизельных двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 903 654-54-78",
+  address: "Ударная улица, 56/2, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79036545478",
+  telegram: "https://t.me/+79036545478",
+  twoGis: "https://2gis.com/firm/70000001100880745",
+  rating: "5",
+  reviews: "1",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/dr-car-36/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "dr-car-36",
+  name: "Dr.Car.36",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Dr.Car.36 — легковой автосервис (Воронеж). Работаем с: ремонт мкпп, ремонт выхлопных систем, ремонт дизельных двигателей, ремонт дизельной топливной системы. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 905 654-59-85",
+  address: "проспект Патриотов, 25д, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  whatsapp: "https://wa.me/79056545985",
+  telegram: "https://t.me/+79056545985",
+  twoGis: "https://2gis.com/firm/70000001099949901",
+  rating: "4.6",
+  reviews: "20",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/autohata36/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "autohata36",
+  name: "Autohata36",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Autohata36 — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, замена масла, компьютерная диагностика автомобилей, ремонт выхлопных систем. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 951 543-55-75",
+  address: "улица Ломоносова, 114/10г к4, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  whatsapp: "https://wa.me/79515435575",
+  telegram: "https://t.me/+79515435575",
+  twoGis: "https://2gis.com/firm/70000001074791608",
+  rating: "4.3",
+  reviews: "27",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/euromotors/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "euromotors",
+  name: "Euromotors",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Euromotors — легковой автосервис (Воронеж). Работаем с: ремонт дизельных двигателей, ремонт акпп, ремонт ходовой части автомобиля, обслуживание автомобильных климатических систем. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 920 229-59-08",
+  address: "улица Хлеборобов, 8, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  whatsapp: "https://wa.me/79202295908",
+  twoGis: "https://2gis.com/firm/70000001084321191",
+  rating: "4.9",
+  reviews: "34",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/auto-dent-ditailing/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "auto-dent-ditailing",
+  name: "Auto Dent Ditailing",
+  tagline: "Установка и ремонт автостёкол. Онлайн-запись без звонков.",
+  description: "Auto Dent Ditailing — установка и ремонт автостёкол (Воронеж). Работаем с: кузовной ремонт, детейлинг. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 909 217-05-13",
+  address: "Лечебный переулок, 1а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  whatsapp: "https://wa.me/79092170513",
+  twoGis: "https://2gis.com/firm/70000001028560960",
+  rating: "4.3",
+  reviews: "11",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/car-service/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "car-service",
+  name: "Car-service",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Car-service — легковой автосервис (Воронеж). Работаем с: шиномонтаж, ремонт мкпп, ремонт дизельных двигателей, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 952 559-17-67",
+  address: "Учебный переулок, 13а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  whatsapp: "https://wa.me/79525591767",
+  twoGis: "https://2gis.com/firm/70000001053810763",
+  rating: "4.6",
+  reviews: "10",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/demo/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+
+// Брендинг и контакты точки. Цены, боксы и график работы лежат в БД (редактируются владельцем).
+export const config: TenantConfig = {
+  id: 'demo',
+  name: 'AutoPro Detailing',
+  tagline: 'Детейлинг и мойка. Запишитесь за минуту.',
+  description: 'Возвращаем автомобилю заводской блеск. Работаем с кузовом, салоном и колёсами, даём гарантию на все виды работ.',
+  phone: '+7 900 000-00-00',
+  address: 'Москва, ул. Промышленная, 12',
+  hours: 'Пн–Пт 9:00–20:00, Сб 10:00–18:00',
+  timezone: 'Europe/Moscow',
+  currency: '₽',
+  accent: '#FF4D00',
+  heroImage: 'https://images.unsplash.com/photo-1520340356584-f9917d1eea6f?auto=format&fit=crop&w=1400&q=70',
+  vehicleClasses: [
+    { id: 'sedan', label: 'Седан' },
+    { id: 'crossover', label: 'Кроссовер' },
+    { id: 'minivan', label: 'Микроавтобус' }
+  ],
+  faq: [
+    { q: 'Есть ли зона ожидания?', a: 'Да: кофе, Wi-Fi и удобные кресла.' },
+    { q: 'Даёте ли гарантию?', a: 'Гарантия на работы — 30 дней.' },
+    { q: 'Как можно оплатить?', a: 'Наличными, картой или по QR-коду.' }
+  ]
+}
+================================================================================
+### ФАЙЛ: src/tenants/art-servis/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "art-servis",
+  name: "Art сервис",
+  tagline: "Шиномонтаж. Онлайн-запись без звонков.",
+  description: "Art сервис — шиномонтаж (Воронеж). Работаем с: ремонт бензиновых двигателей, компьютерная диагностика автомобилей, ремонт акпп. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 908 136-08-80",
+  address: "улица 17 Танкового корпуса, 39, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FFC400",
+  whatsapp: "https://wa.me/79081360880",
+  twoGis: "https://2gis.com/firm/70000001104588686",
+  rating: "1.4",
+  reviews: "1",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/bayer36/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "bayer36",
+  name: "Bayer36",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Bayer36 — легковой автосервис (Воронеж). Работаем с: замена масла, ремонт ходовой части автомобиля, ремонт выхлопных систем, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 900 951-09-57",
+  address: "Брянский проезд, 9, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  whatsapp: "https://wa.me/79009510957",
+  telegram: "https://t.me/+79009510957",
+  twoGis: "https://2gis.com/firm/70000001030919835",
+  rating: "4.2",
+  reviews: "16",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/avtomotors36/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "avtomotors36",
+  name: "Avtomotors36",
+  tagline: "Ремонт ходовой части автомобиля. Онлайн-запись без звонков.",
+  description: "Avtomotors36 — ремонт ходовой части автомобиля (Воронеж). Работаем с: ремонт бензиновых двигателей, шиномонтаж. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 905 051-71-37",
+  address: "улица Димитрова, 91а/4, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  whatsapp: "https://wa.me/79050517137",
+  telegram: "https://t.me/+79050517137",
+  twoGis: "https://2gis.com/firm/70000001036940809",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/energy-service/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "energy-service",
+  name: "Energy service",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Energy service — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, ремонт дизельных двигателей, ремонт бензиновых двигателей, запчасти для иномарок. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 903 855-11-25",
+  address: "улица Героев Стратосферы, 22д, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  whatsapp: "https://wa.me/79038551125",
+  twoGis: "https://2gis.com/firm/70000001059676336",
+  rating: "5",
+  reviews: "6",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/bavarec-auto/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "bavarec-auto",
+  name: "Bavarec Auto",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Bavarec Auto — легковой автосервис (Воронеж). Работаем с: компьютерная диагностика автомобилей, ремонт дизельных двигателей, ремонт бензиновых двигателей, ремонт электронных систем авто. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 960 104-50-50",
+  address: "Краснознамённая улица, 145Б, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  whatsapp: "https://wa.me/79601045050",
+  twoGis: "https://2gis.com/firm/70000001044711871",
+  rating: "5",
+  reviews: "2",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/dmauto36/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "dmauto36",
+  name: "Dmauto36",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Dmauto36 — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, ремонт бензиновых двигателей, замена масла, компьютерная диагностика автомобилей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 920 404-83-01",
+  address: "улица 40 лет Октября, 1Б, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79204048301",
+  telegram: "https://t.me/+79204048301",
+  twoGis: "https://2gis.com/firm/4363390420131395",
+  rating: "4.2",
+  reviews: "10",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/black-style-auto/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "black-style-auto",
+  name: "Black Style Auto",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Black Style Auto — легковой автосервис (Воронеж). Работаем с: ремонт стартеров и генераторов, ремонт бензиновых двигателей, ремонт мкпп, компьютерная диагностика автомобилей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 995 036-36-03",
+  address: "Солнечная улица, 17/2, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#39FF88",
+  whatsapp: "https://wa.me/79950363603",
+  telegram: "https://t.me/bs_auto_vrn",
+  twoGis: "https://2gis.com/firm/70000001103964815",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/express-car-shilovo/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "express-car-shilovo",
+  name: "Express Car Shilovo",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Express Car Shilovo — легковой автосервис (Воронеж). Работаем с: шиномонтаж, ремонт ходовой части автомобиля, замена масла, компьютерная диагностика автомобилей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 900 933-65-75",
+  address: "улица Курчатова, 29а, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79009336575",
+  twoGis: "https://2gis.com/firm/70000001109601317",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/alv/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "alv",
+  name: "Alv",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Alv — легковой автосервис (Воронеж). Работаем с: кузовной ремонт, ремонт ходовой части автомобиля, ремонт электронных систем авто, ремонт бензиновых двигателей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 930 409-00-85",
+  address: "улица Матросова, 207/2, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#00E5FF",
+  whatsapp: "https://wa.me/79304090085",
+  twoGis: "https://2gis.com/firm/70000001057432688",
+  rating: "4.2",
+  reviews: "14",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/136avto/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "136avto",
+  name: "136Авто",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "136Авто — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, шиномонтаж, обслуживание автомобильных климатических систем, ремонт электронных систем авто. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 952 100-13-39",
+  address: "улица Антонова-Овсеенко, 35и, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF2D6F",
+  whatsapp: "https://wa.me/79521001339",
+  twoGis: "https://2gis.com/firm/4363390420054266",
+  rating: "3.8",
+  reviews: "4",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/ads/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "ads",
+  name: "Ads",
+  tagline: "Компьютерная диагностика автомобилей. Онлайн-запись без звонков.",
+  description: "Ads — компьютерная диагностика автомобилей (Воронеж). Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 926 792-65-87",
+  address: "улица Димитрова, 91, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#7C5CFF",
+  whatsapp: "https://wa.me/79267926587",
+  twoGis: "https://2gis.com/firm/70000001095151427",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/tenants/expert-in-auto-ternovoye/config.ts
+================================================================================
+import type { TenantConfig } from '../types'
+import { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'
+
+export const config: TenantConfig = {
+  id: "expert-in-auto-ternovoye",
+  name: "Expert In Auto Ternovoye",
+  tagline: "Легковой автосервис. Онлайн-запись без звонков.",
+  description: "Expert In Auto Ternovoye — легковой автосервис (Воронеж). Работаем с: ремонт ходовой части автомобиля, шиномонтаж, автомойки, компьютерная диагностика автомобилей. Выберите услугу и удобное время — запись займёт минуту.",
+  phone: "+7 473 210-66-76",
+  address: "Заречный переулок, 18/1, Воронеж",
+  hours: "Уточняйте по телефону",
+  timezone: "Europe/Moscow",
+  currency: "₽",
+  accent: "#FF4D00",
+  twoGis: "https://2gis.com/firm/70000001026771673",
+  rating: "3.5",
+  reviews: "10",
+  vehicleClasses: DEFAULT_CLASSES,
+  faq: DEFAULT_FAQ
+}
+================================================================================
+### ФАЙЛ: src/lib/api.ts
+================================================================================
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from './supabase'
+import type { VehicleClass } from '@/tenants/types'
+
+export interface Service {
+  id: string
+  name: string
+  description: string | null
+  base_price: number
+  base_duration: number
+  service_prices_by_class: { vehicle_class: VehicleClass; price: number; duration_min: number }[]
+}
+
+export const useServices = (shopId: string) =>
+  useQuery({
+    queryKey: ['services', shopId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('services')
+        .select('id,name,description,base_price,base_duration,service_prices_by_class(vehicle_class,price,duration_min)')
+        .eq('shop_id', shopId)
+        .eq('active', true)
+        .order('sort')
+      if (error) throw error
+      return data as unknown as Service[]
+    }
+  })
+
+// Цена и длительность по классу авто (если для класса не задано — базовые значения)
+export const priceFor = (s: Service, c: VehicleClass) => {
+  const p = s.service_prices_by_class.find((x) => x.vehicle_class === c)
+  return { price: p?.price ?? s.base_price, duration: p?.duration_min ?? s.base_duration }
+}
+================================================================================
+### ФАЙЛ: src/lib/supabase.ts
+================================================================================
+import { createClient } from '@supabase/supabase-js'
+
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL ?? 'http://localhost',
+  import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'missing-key'
+)
+================================================================================
+### ФАЙЛ: src/pages/Booking.tsx
+================================================================================
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { addDays, format, parseISO } from 'date-fns'
+import { ru } from 'date-fns/locale'
+import { formatInTimeZone } from 'date-fns-tz'
+import { useShop } from '@/components/ShopLayout'
+import { priceFor, useServices } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
+import type { VehicleClass } from '@/tenants/types'
+
+const schema = z.object({
+  name: z.string().min(2, 'Введите имя'),
+  phone: z.string().regex(/^[+\d][\d\s()-]{9,}$/, 'Введите телефон полностью'),
+  car: z.string().min(2, 'Укажите марку и модель'),
+  plate: z.string().min(4, 'Введите госномер')
+})
+type Form = z.infer<typeof schema>
+
+const field = 'w-full rounded-lg bg-white/10 px-4 py-3 text-base placeholder:text-white/40'
+const chip = (on: boolean) => `shrink-0 rounded-full px-4 py-2 text-sm ${on ? 'bg-accent font-semibold text-black' : 'bg-white/10'}`
+
+export default function Booking() {
+  const cfg = useShop()
+  const nav = useNavigate()
+  const { data: services = [] } = useServices(cfg.id)
+  const [sid, setSid] = useState<string>()
+  const [cls, setCls] = useState<VehicleClass>('sedan')
+  const days = useMemo(
+    () => Array.from({ length: 14 }, (_, i) => formatInTimeZone(addDays(new Date(), i), cfg.timezone, 'yyyy-MM-dd')),
+    [cfg.timezone]
+  )
+  const [day, setDay] = useState(days[0])
+  const [slot, setSlot] = useState<string>()
+  const svc = services.find((s) => s.id === sid)
+
+  const slots = useQuery({
+    queryKey: ['slots', cfg.id, sid, cls, day],
+    enabled: !!sid,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_free_slots', { p_shop_id: cfg.id, p_service_id: sid, p_class: cls, p_date: day })
+      if (error) throw error
+      return (data as { slot: string }[]).map((r) => r.slot)
+    }
+  })
+
+  const { register, handleSubmit, formState: { errors } } = useForm<Form>({ resolver: zodResolver(schema) })
+
+  const book = useMutation({
+    mutationFn: async (f: Form) => {
+      const { data, error } = await supabase.rpc('create_appointment', {
+        p_shop_id: cfg.id, p_service_id: sid, p_class: cls, p_starts_at: slot,
+        p_name: f.name, p_phone: f.phone, p_car: f.car, p_plate: f.plate
+      })
+      if (error) throw error
+      return (data as { token: string }[])[0]
+    },
+    onSuccess: (r) => {
+      localStorage.setItem(`booking:${cfg.id}`, r.token)
+      nav(`/s/${cfg.id}/my`)
+    },
+    onError: () => { setSlot(undefined); slots.refetch() }
+  })
+
+  const err = book.error?.message ?? ''
+  return (
+    <form onSubmit={handleSubmit((f) => book.mutate(f))} className="mx-auto max-w-2xl space-y-8 px-5 py-8">
+      <h1 className="font-display text-4xl font-bold">Запись</h1>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Услуга и класс авто</h2>
+        <div className="flex gap-2 overflow-x-auto">
+          {cfg.vehicleClasses.map((c) => (
+            <button type="button" key={c.id} onClick={() => { setCls(c.id); setSlot(undefined) }} className={chip(cls === c.id)}>{c.label}</button>
+          ))}
+        </div>
+        {services.map((s) => {
+          const p = priceFor(s, cls)
+          return (
+            <button type="button" key={s.id} onClick={() => { setSid(s.id); setSlot(undefined) }}
+              className={`flex w-full justify-between rounded-lg px-4 py-3 text-left ${sid === s.id ? 'bg-accent text-black' : 'bg-white/10'}`}>
+              <span>{s.name}<span className="block text-sm opacity-70">{p.duration} мин</span></span>
+              <span className="font-display text-xl font-bold">{p.price.toLocaleString('ru-RU')} {cfg.currency}</span>
+            </button>
+          )
+        })}
+      </section>
+
+      {svc && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Дата и время</h2>
+          <div className="flex gap-2 overflow-x-auto">
+            {days.map((d) => (
+              <button type="button" key={d} onClick={() => { setDay(d); setSlot(undefined) }} className={chip(day === d)}>
+                {format(parseISO(d), 'EEE d', { locale: ru })}
+              </button>
+            ))}
+          </div>
+          {slots.isLoading && <p className="text-white/60">Ищем свободное время…</p>}
+          {slots.data?.length === 0 && <p className="text-white/60">На этот день мест нет — выберите другую дату.</p>}
+          <div className="grid grid-cols-4 gap-2">
+            {slots.data?.map((t) => (
+              <button type="button" key={t} onClick={() => setSlot(t)} className={`rounded-lg py-3 ${slot === t ? 'bg-accent font-semibold text-black' : 'bg-white/10'}`}>
+                {formatInTimeZone(new Date(t), cfg.timezone, 'HH:mm')}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {slot && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Ваши данные</h2>
+          <input {...register('name')} placeholder="Имя" autoComplete="name" className={field} />
+          {errors.name && <p className="text-sm text-red-400">{errors.name.message}</p>}
+          <input {...register('phone')} placeholder="Телефон" type="tel" autoComplete="tel" className={field} />
+          {errors.phone && <p className="text-sm text-red-400">{errors.phone.message}</p>}
+          <input {...register('car')} placeholder="Марка и модель авто" className={field} />
+          {errors.car && <p className="text-sm text-red-400">{errors.car.message}</p>}
+          <input {...register('plate')} placeholder="Госномер" className={field} />
+          {errors.plate && <p className="text-sm text-red-400">{errors.plate.message}</p>}
+          {err.includes('slot_taken') && <p className="text-red-400">Это время только что заняли. Выберите другое.</p>}
+          {err && !err.includes('slot_taken') && <p className="text-red-400">Не удалось записаться. Проверьте данные и попробуйте ещё раз.</p>}
+          <button disabled={book.isPending} className="w-full rounded-lg bg-accent py-4 text-lg font-semibold text-black disabled:opacity-50">
+            {book.isPending ? 'Записываем…' : 'Записаться'}
+          </button>
+        </section>
+      )}
+    </form>
+  )
+}
+================================================================================
+### ФАЙЛ: src/pages/Home.tsx
+================================================================================
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { CalendarPlus, MapPin, Clock, Phone } from 'lucide-react'
+import { useShop } from '@/components/ShopLayout'
+import { Reveal } from '@/components/Reveal'
+import { priceFor, useServices } from '@/lib/api'
+import type { VehicleClass } from '@/tenants/types'
+
+export default function Home() {
+  const cfg = useShop()
+  const { data: services = [], isLoading } = useServices(cfg.id)
+  const [cls, setCls] = useState<VehicleClass>('sedan')
+  return (
+    <>
+      <header className="relative h-[75vh] min-h-[460px] overflow-hidden">
+        {cfg.heroImage ? (
+          <img src={cfg.heroImage} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />
+        ) : (
+          <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'repeating-linear-gradient(135deg, var(--accent) 0 2px, transparent 2px 24px)' }} />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/50 to-transparent" />
+        <motion.div initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}
+          className="absolute bottom-0 max-w-xl p-5">
+          <h1 className="font-display text-6xl font-bold leading-[0.95]">{cfg.name}</h1>
+          <p className="mt-3 text-lg text-white/85">{cfg.tagline}</p>
+        </motion.div>
+      </header>
+
+      <main className="mx-auto max-w-2xl space-y-14 px-5 py-10">
+        <Reveal>
+          <p className="text-lg leading-relaxed text-white/80">{cfg.description}</p>
+          {cfg.rating && <p className="mt-3 text-white/70">Рейтинг в 2ГИС: <b className="text-white">{cfg.rating}</b>{cfg.reviews ? ` · отзывов: ${cfg.reviews}` : ''}</p>}
+          <div className="mt-4 flex flex-wrap gap-2 text-sm">
+            <a className="rounded-full bg-white/10 px-4 py-2" href={`tel:${cfg.phone.replace(/[^+\d]/g, '')}`}>Позвонить</a>
+            {cfg.whatsapp && <a className="rounded-full bg-white/10 px-4 py-2" href={cfg.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>}
+            {cfg.telegram && <a className="rounded-full bg-white/10 px-4 py-2" href={cfg.telegram} target="_blank" rel="noreferrer">Telegram</a>}
+            {cfg.twoGis && <a className="rounded-full bg-white/10 px-4 py-2" href={cfg.twoGis} target="_blank" rel="noreferrer">2ГИС</a>}
+          </div>
+        </Reveal>
+
+        <Reveal>
+          <h2 className="font-display text-3xl font-bold">Услуги и цены</h2>
+          <div className="mt-4 flex gap-2 overflow-x-auto">
+            {cfg.vehicleClasses.map((c) => (
+              <button key={c.id} onClick={() => setCls(c.id)}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm ${cls === c.id ? 'bg-accent font-semibold text-black' : 'bg-white/10'}`}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {isLoading && <p className="mt-6 text-white/60">Загружаем услуги…</p>}
+          <ul className="mt-2 divide-y divide-white/10">
+            {services.map((s) => {
+              const p = priceFor(s, cls)
+              return (
+                <li key={s.id} className="flex items-baseline justify-between gap-4 py-4">
+                  <div>
+                    <div className="text-lg font-medium">{s.name}</div>
+                    <div className="text-sm text-white/60">{s.description} · {p.duration} мин</div>
+                  </div>
+                  <div className="shrink-0 font-display text-2xl font-bold">{p.price.toLocaleString('ru-RU')} {cfg.currency}</div>
+                </li>
+              )
+            })}
+          </ul>
+        </Reveal>
+
+        <Reveal>
+          <h2 className="font-display text-3xl font-bold">Как нас найти</h2>
+          <div className="mt-4 space-y-3 text-white/85">
+            <p className="flex gap-3"><MapPin className="shrink-0 text-accent" />{cfg.address}</p>
+            <p className="flex gap-3"><Clock className="shrink-0 text-accent" />{cfg.hours}</p>
+            <a href={`tel:${cfg.phone.replace(/[^+\d]/g, '')}`} className="flex gap-3"><Phone className="shrink-0 text-accent" />{cfg.phone}</a>
+          </div>
+        </Reveal>
+
+        <Reveal>
+          <h2 className="font-display text-3xl font-bold">Частые вопросы</h2>
+          <div className="mt-2 divide-y divide-white/10">
+            {cfg.faq.map((f) => (
+              <details key={f.q} className="group py-4">
+                <summary className="cursor-pointer text-lg font-medium">{f.q}</summary>
+                <p className="mt-2 text-white/70">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </Reveal>
+      </main>
+
+      <Link to={`/s/${cfg.id}/book`}
+        className="fixed bottom-24 right-4 z-30 flex items-center gap-2 rounded-full bg-accent px-6 py-4 font-semibold text-black shadow-lg">
+        <CalendarPlus size={20} /> Записаться
+      </Link>
+    </>
+  )
+}
+================================================================================
+### ФАЙЛ: src/pages/MyBooking.tsx
+================================================================================
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
+import { formatInTimeZone } from 'date-fns-tz'
+import { ru } from 'date-fns/locale'
+import { useShop } from '@/components/ShopLayout'
+import { supabase } from '@/lib/supabase'
+
+interface Appt { starts_at: string; status: string; service_name: string | null; car_model: string; price: number }
+const STATUS: Record<string, string> = { pending: 'Ожидает', in_progress: 'В работе', done: 'Готово', paid: 'Оплачено', cancelled: 'Отменено' }
+
+export default function MyBooking() {
+  const cfg = useShop()
+  const [sp] = useSearchParams()
+  const token = sp.get('t') ?? localStorage.getItem(`booking:${cfg.id}`)
+  const q = useQuery({
+    queryKey: ['my', token],
+    enabled: !!token,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_my_appointment', { p_token: token })
+      if (error) throw error
+      return ((data as Appt[])[0] ?? null)
+    }
+  })
+  const cancel = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc('cancel_appointment', { p_token: token })
+      if (error) throw error
+    },
+    onSuccess: () => q.refetch()
+  })
+  const a = q.data
+  return (
+    <div className="mx-auto max-w-2xl space-y-6 px-5 py-8">
+      <h1 className="font-display text-4xl font-bold">Моя запись</h1>
+      {!a ? (
+        <p className="text-white/70">Активных записей нет. <Link className="text-accent underline" to={`/s/${cfg.id}/book`}>Записаться</Link></p>
+      ) : (
+        <div className="space-y-2 rounded-lg bg-white/10 p-5">
+          <div className="text-2xl font-semibold">{a.service_name}</div>
+          <div>{formatInTimeZone(new Date(a.starts_at), cfg.timezone, "d MMMM, HH:mm", { locale: ru })}</div>
+          <div className="text-white/70">{a.car_model} · {a.price.toLocaleString('ru-RU')} {cfg.currency}</div>
+          <div className="font-semibold text-accent">{STATUS[a.status] ?? a.status}</div>
+          {a.status === 'pending' && (
+            <button onClick={() => cancel.mutate()} disabled={cancel.isPending} className="mt-3 rounded-lg border border-white/30 px-4 py-3">
+              Отменить запись
+            </button>
+          )}
+          {cancel.isError && <p className="text-red-400">Отмена недоступна. Позвоните: {cfg.phone}</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+================================================================================
+### ФАЙЛ: supabase/schema.sql
+================================================================================
+-- Выполнить целиком в Supabase → SQL Editor. Безопасно запускать на пустом проекте.
+create extension if not exists btree_gist;
+
+create table shops (
+  id text primary key,
+  name text not null,
+  owner_id uuid references auth.users(id) on delete set null
+);
+
+create table settings (
+  shop_id text primary key references shops(id) on delete cascade,
+  timezone text not null default 'Europe/Moscow',
+  slot_step_min int not null default 30 check (slot_step_min between 5 and 240),
+  -- ключ = ISO-день недели (1=пн … 7=вс), значение = [открытие, закрытие]; нет ключа = выходной
+  work_hours jsonb not null default '{"1":["09:00","20:00"],"2":["09:00","20:00"],"3":["09:00","20:00"],"4":["09:00","20:00"],"5":["09:00","20:00"],"6":["10:00","18:00"]}'
+);
+
+create table bays (
+  id uuid primary key default gen_random_uuid(),
+  shop_id text not null references shops(id) on delete cascade,
+  name text not null,
+  active boolean not null default true
+);
+
+create table services (
+  id uuid primary key default gen_random_uuid(),
+  shop_id text not null references shops(id) on delete cascade,
+  name text not null,
+  description text,
+  base_price int not null check (base_price >= 0),
+  base_duration int not null check (base_duration > 0),
+  active boolean not null default true,
+  sort int not null default 0
+);
+
+create table service_prices_by_class (
+  service_id uuid not null references services(id) on delete cascade,
+  vehicle_class text not null check (vehicle_class in ('sedan','crossover','minivan')),
+  price int not null check (price >= 0),
+  duration_min int not null check (duration_min > 0),
+  primary key (service_id, vehicle_class)
+);
+
+create table appointments (
+  id uuid primary key default gen_random_uuid(),
+  shop_id text not null references shops(id) on delete cascade,
+  service_id uuid references services(id) on delete set null,
+  bay_id uuid not null references bays(id),
+  vehicle_class text not null,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  status text not null default 'pending' check (status in ('pending','in_progress','done','paid','cancelled')),
+  customer_name text not null,
+  phone text not null,
+  car_model text not null,
+  plate text not null,
+  price int not null,
+  cancel_token uuid not null default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at),
+  -- жёсткая гарантия на уровне БД: в одном боксе записи не пересекаются
+  constraint no_bay_overlap exclude using gist (bay_id with =, tstzrange(starts_at, ends_at) with &&) where (status <> 'cancelled')
+);
+create index on appointments (shop_id, starts_at);
+create unique index on appointments (cancel_token);
+
+create table gallery (
+  id uuid primary key default gen_random_uuid(),
+  shop_id text not null references shops(id) on delete cascade,
+  image_path text not null,
+  before_path text,
+  caption text,
+  created_at timestamptz not null default now()
+);
+
+-- ============ RLS ============
+create or replace function is_owner(p_shop text) returns boolean
+language sql security definer stable set search_path = public as
+$$ select exists (select 1 from shops where id = p_shop and owner_id = auth.uid()) $$;
+
+alter table shops enable row level security;
+alter table settings enable row level security;
+alter table bays enable row level security;
+alter table services enable row level security;
+alter table service_prices_by_class enable row level security;
+alter table appointments enable row level security;
+alter table gallery enable row level security;
+
+create policy shops_read on shops for select using (true);
+create policy shops_owner on shops for update to authenticated using (owner_id = auth.uid());
+create policy settings_read on settings for select using (true);
+create policy settings_owner on settings for all to authenticated using (is_owner(shop_id)) with check (is_owner(shop_id));
+create policy services_read on services for select using (active or is_owner(shop_id));
+create policy services_owner on services for all to authenticated using (is_owner(shop_id)) with check (is_owner(shop_id));
+create policy prices_read on service_prices_by_class for select using (true);
+create policy prices_owner on service_prices_by_class for all to authenticated
+  using (exists (select 1 from services s where s.id = service_id and is_owner(s.shop_id)))
+  with check (exists (select 1 from services s where s.id = service_id and is_owner(s.shop_id)));
+create policy gallery_read on gallery for select using (true);
+create policy gallery_owner on gallery for all to authenticated using (is_owner(shop_id)) with check (is_owner(shop_id));
+create policy bays_owner on bays for all to authenticated using (is_owner(shop_id)) with check (is_owner(shop_id));
+-- appointments: анонимам НЕТ прямого доступа (ни select, ни insert). Создание — только через RPC ниже.
+create policy appointments_owner on appointments for all to authenticated using (is_owner(shop_id)) with check (is_owner(shop_id));
+
+-- ============ RPC ============
+-- Свободные слоты на дату (без раскрытия чужих данных)
+create or replace function get_free_slots(p_shop_id text, p_service_id uuid, p_class text, p_date date)
+returns table (slot timestamptz) language plpgsql security definer stable set search_path = public as $$
+declare s settings; dur int; win jsonb; t timestamp; st timestamptz; en timestamptz; nbays int;
+begin
+  select * into s from settings where shop_id = p_shop_id;
+  if not found then return; end if;
+  select coalesce(p.duration_min, sv.base_duration) into dur
+    from services sv left join service_prices_by_class p on p.service_id = sv.id and p.vehicle_class = p_class
+    where sv.id = p_service_id and sv.shop_id = p_shop_id and sv.active;
+  if dur is null then return; end if;
+  win := s.work_hours -> (extract(isodow from p_date)::int)::text;
+  if win is null then return; end if;
+  select count(*) into nbays from bays where shop_id = p_shop_id and active;
+  t := p_date + (win->>0)::time;
+  while t + make_interval(mins => dur) <= p_date + (win->>1)::time loop
+    st := t at time zone s.timezone;
+    en := st + make_interval(mins => dur);
+    if st > now() and (
+      select count(distinct a.bay_id) from appointments a
+      where a.shop_id = p_shop_id and a.status <> 'cancelled' and tstzrange(a.starts_at, a.ends_at) && tstzrange(st, en)
+    ) < nbays then slot := st; return next; end if;
+    t := t + make_interval(mins => s.slot_step_min);
+  end loop;
+end $$;
+
+-- Создание записи: advisory-lock на магазин + поиск свободного бокса + exclusion constraint = нет овербукинга
+create or replace function create_appointment(
+  p_shop_id text, p_service_id uuid, p_class text, p_starts_at timestamptz,
+  p_name text, p_phone text, p_car text, p_plate text)
+returns table (appointment_id uuid, token uuid, start_at timestamptz)
+language plpgsql security definer set search_path = public as $$
+declare s settings; dur int; prc int; fin timestamptz; win jsonb; loc timestamp; bay uuid; rec appointments;
+begin
+  if length(trim(p_name)) < 2 or length(trim(p_phone)) < 10 or length(trim(p_plate)) < 4 then raise exception 'invalid_input'; end if;
+  perform pg_advisory_xact_lock(hashtext(p_shop_id));
+  select * into s from settings where shop_id = p_shop_id;
+  if not found then raise exception 'shop_not_found'; end if;
+  select coalesce(p.duration_min, sv.base_duration), coalesce(p.price, sv.base_price) into dur, prc
+    from services sv left join service_prices_by_class p on p.service_id = sv.id and p.vehicle_class = p_class
+    where sv.id = p_service_id and sv.shop_id = p_shop_id and sv.active;
+  if dur is null then raise exception 'service_not_found'; end if;
+  if p_starts_at <= now() then raise exception 'in_past'; end if;
+  fin := p_starts_at + make_interval(mins => dur);
+  loc := p_starts_at at time zone s.timezone;
+  win := s.work_hours -> (extract(isodow from loc)::int)::text;
+  if win is null or loc::time < (win->>0)::time or (fin at time zone s.timezone)::time > (win->>1)::time then
+    raise exception 'outside_hours';
+  end if;
+  select b.id into bay from bays b
+    where b.shop_id = p_shop_id and b.active
+      and not exists (select 1 from appointments a where a.bay_id = b.id and a.status <> 'cancelled'
+                      and tstzrange(a.starts_at, a.ends_at) && tstzrange(p_starts_at, fin))
+    order by b.name limit 1;
+  if bay is null then raise exception 'slot_taken'; end if;
+  insert into appointments (shop_id, service_id, bay_id, vehicle_class, starts_at, ends_at, customer_name, phone, car_model, plate, price)
+    values (p_shop_id, p_service_id, bay, p_class, p_starts_at, fin, trim(p_name), trim(p_phone), trim(p_car), upper(trim(p_plate)), prc)
+    returning * into rec;
+  return query select rec.id, rec.cancel_token, rec.starts_at;
+exception when exclusion_violation then raise exception 'slot_taken';
+end $$;
+
+create or replace function get_my_appointment(p_token uuid)
+returns table (starts_at timestamptz, status text, service_name text, car_model text, price int)
+language sql security definer stable set search_path = public as
+$$ select a.starts_at, a.status, s.name, a.car_model, a.price from appointments a left join services s on s.id = a.service_id where a.cancel_token = p_token $$;
+
+create or replace function cancel_appointment(p_token uuid) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  update appointments set status = 'cancelled' where cancel_token = p_token and status = 'pending' and starts_at > now();
+  get diagnostics n = row_count;
+  return n > 0;
+end $$;
+
+-- ============ Storage (фото «Наши работы») ============
+insert into storage.buckets (id, name, public) values ('gallery', 'gallery', true) on conflict do nothing;
+create policy gallery_files_read on storage.objects for select using (bucket_id = 'gallery');
+create policy gallery_files_owner on storage.objects for all to authenticated
+  using (bucket_id = 'gallery' and exists (select 1 from shops where owner_id = auth.uid()))
+  with check (bucket_id = 'gallery' and exists (select 1 from shops where owner_id = auth.uid()));
+================================================================================
+### ФАЙЛ: supabase/seed.sql
+================================================================================
+-- Демо-данные для точки 'demo'. Запускать ОДИН раз после schema.sql.
+insert into shops (id, name) values ('demo', 'AutoPro Detailing') on conflict do nothing;
+insert into settings (shop_id) values ('demo') on conflict do nothing;
+insert into bays (shop_id, name) select 'demo', 'Бокс ' || g from generate_series(1, 3) g
+  where not exists (select 1 from bays where shop_id = 'demo');
+
+insert into services (shop_id, name, description, base_price, base_duration, sort) values
+  ('demo', 'Комплексная мойка', 'Кузов, салон, стёкла, чернение резины', 1500, 60, 1),
+  ('demo', 'Химчистка салона', 'Глубокая чистка сидений, потолка и пластика', 6000, 180, 2),
+  ('demo', 'Полировка кузова', 'Удаление царапин и голограмм, защитный воск', 12000, 300, 3),
+  ('demo', 'Шиномонтаж (4 колеса)', 'Снятие, балансировка, установка', 2400, 60, 4);
+
+-- Коэффициенты по классам: цена и длительность
+insert into service_prices_by_class (service_id, vehicle_class, price, duration_min)
+select s.id, c.cls, (round(s.base_price * c.k / 10) * 10)::int, ceil(s.base_duration * c.d / 5)::int * 5
+from services s,
+     (values ('sedan', 1.0, 1.0), ('crossover', 1.25, 1.2), ('minivan', 1.5, 1.4)) as c(cls, k, d)
+where s.shop_id = 'demo';
+================================================================================
+### ФАЙЛ: supabase/tenants_voronezh.sql
+================================================================================
+-- Сгенерировано scripts/generate_from_xlsx.py. Запускать ОДИН раз после schema.sql.
+-- ЦЕНЫ И ДЛИТЕЛЬНОСТИ — заглушки; график по умолчанию Пн–Сб, 2 бокса. Владельцы (shops.owner_id) не заданы.
+insert into shops (id, name) values
+('9-avenue', '9 Avenue'),
+('ard', 'Ard'),
+('autohata36', 'Autohata36'),
+('autohunter', 'Autohunter'),
+('avto-reviz', 'Avto Reviz'),
+('avtomotors36', 'Avtomotors36'),
+('bayer36', 'Bayer36'),
+('beep-stop', 'Beep-Stop'),
+('black-fish-36', 'Black fish 36'),
+('black-style-auto', 'Black Style Auto'),
+('breach-auto', 'Breach Auto'),
+('carbox7', 'CarBox7'),
+('dg-service', 'Dg_Service'),
+('dmauto36', 'Dmauto36'),
+('dr-car-36', 'Dr.Car.36'),
+('12-vol-t', '12 вольт'),
+('136avto', '136Авто'),
+('1911', '1911'),
+('1996', '1996'),
+('4x4-vrn', '4x4 vrn'),
+('789', '789'),
+('800-oborotov-oyl', '800 оборотов-ойл'),
+('a1', 'A1'),
+('ads', 'Ads'),
+('alliance', 'Alliance'),
+('alv', 'Alv'),
+('art-servis', 'Art сервис'),
+('aservise', 'Aservise'),
+('astra-motors', 'Astra Motors'),
+('auto-dent-ditailing', 'Auto Dent Ditailing'),
+('autogear', 'AutoGear'),
+('autolightsworkshop', 'AutoLightsWorkshop'),
+('avbmotorsport', 'Avbmotorsport'),
+('avtomatik-vrn', 'Avtomatik vrn'),
+('avtoservis-36', 'avtoservis_36'),
+('avto-srs', 'Aвто srs'),
+('bavarec-auto', 'Bavarec Auto'),
+('bbs', 'BBS'),
+('beautiful-car', 'Beautiful car'),
+('black-bear-garage', 'Black Bear Garage'),
+('body-style', 'Body Style'),
+('box-13', 'Box 13'),
+('car-service', 'Car-service'),
+('carhelp', 'Carhelp'),
+('carzone', 'Carzone'),
+('cepsa', 'Cepsa'),
+('energy-service', 'Energy service'),
+('euromotors', 'Euromotors'),
+('expert-in-auto-ternovoye', 'Expert In Auto Ternovoye'),
+('express-car-shilovo', 'Express Car Shilovo')
+on conflict do nothing;
+insert into settings (shop_id) select id from shops where id in ('9-avenue', 'ard', 'autohata36', 'autohunter', 'avto-reviz', 'avtomotors36', 'bayer36', 'beep-stop', 'black-fish-36', 'black-style-auto', 'breach-auto', 'carbox7', 'dg-service', 'dmauto36', 'dr-car-36', '12-vol-t', '136avto', '1911', '1996', '4x4-vrn', '789', '800-oborotov-oyl', 'a1', 'ads', 'alliance', 'alv', 'art-servis', 'aservise', 'astra-motors', 'auto-dent-ditailing', 'autogear', 'autolightsworkshop', 'avbmotorsport', 'avtomatik-vrn', 'avtoservis-36', 'avto-srs', 'bavarec-auto', 'bbs', 'beautiful-car', 'black-bear-garage', 'body-style', 'box-13', 'car-service', 'carhelp', 'carzone', 'cepsa', 'energy-service', 'euromotors', 'expert-in-auto-ternovoye', 'express-car-shilovo') on conflict do nothing;
+insert into bays (shop_id, name) select s.id, 'Бокс ' || g from shops s, generate_series(1, 2) g
+  where s.id in ('9-avenue', 'ard', 'autohata36', 'autohunter', 'avto-reviz', 'avtomotors36', 'bayer36', 'beep-stop', 'black-fish-36', 'black-style-auto', 'breach-auto', 'carbox7', 'dg-service', 'dmauto36', 'dr-car-36', '12-vol-t', '136avto', '1911', '1996', '4x4-vrn', '789', '800-oborotov-oyl', 'a1', 'ads', 'alliance', 'alv', 'art-servis', 'aservise', 'astra-motors', 'auto-dent-ditailing', 'autogear', 'autolightsworkshop', 'avbmotorsport', 'avtomatik-vrn', 'avtoservis-36', 'avto-srs', 'bavarec-auto', 'bbs', 'beautiful-car', 'black-bear-garage', 'body-style', 'box-13', 'car-service', 'carhelp', 'carzone', 'cepsa', 'energy-service', 'euromotors', 'expert-in-auto-ternovoye', 'express-car-shilovo') and not exists (select 1 from bays b where b.shop_id = s.id);
+insert into services (shop_id, name, base_price, base_duration, sort) values
+('9-avenue', 'Диагностика дизельного двигателя', 3000, 90, 0),
+('9-avenue', 'Шиномонтаж (4 колеса)', 2400, 60, 1),
+('9-avenue', 'Диагностика ходовой части', 1500, 60, 2),
+('9-avenue', 'Ремонт стартера и генератора', 3000, 120, 3),
+('9-avenue', 'Диагностика двигателя', 2500, 90, 4),
+('9-avenue', 'Замена масла и фильтров', 1800, 45, 5),
+('ard', 'Диагностика ходовой части', 1500, 60, 0),
+('ard', 'Замена масла и фильтров', 1800, 45, 1),
+('ard', 'Диагностика двигателя', 2500, 90, 2),
+('ard', 'Диагностика дизельного двигателя', 3000, 90, 3),
+('ard', 'Ремонт выхлопной системы', 2500, 90, 4),
+('ard', 'Компьютерная диагностика', 1500, 45, 5),
+('autohata36', 'Диагностика ходовой части', 1500, 60, 0),
+('autohata36', 'Замена масла и фильтров', 1800, 45, 1),
+('autohata36', 'Компьютерная диагностика', 1500, 45, 2),
+('autohata36', 'Ремонт выхлопной системы', 2500, 90, 3),
+('autohata36', 'Чистка и ремонт инжекторов', 3500, 120, 4),
+('autohata36', 'Ремонт стартера и генератора', 3000, 120, 5),
+('autohunter', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('autohunter', 'Замена масла и фильтров', 1800, 45, 1),
+('autohunter', 'Развал-схождение', 2500, 60, 2),
+('autohunter', 'Диагностика двигателя', 2500, 90, 3),
+('autohunter', 'Диагностика ходовой части', 1500, 60, 4),
+('autohunter', 'Ремонт стартера и генератора', 3000, 120, 5),
+('avto-reviz', 'Ремонт стартера и генератора', 3000, 120, 0),
+('avto-reviz', 'Диагностика электрики', 2000, 90, 1),
+('avto-reviz', 'Диагностика ходовой части', 1500, 60, 2),
+('avto-reviz', 'Компьютерная диагностика', 1500, 45, 3),
+('avto-reviz', 'Замена масла и фильтров', 1800, 45, 4),
+('avto-reviz', 'Обслуживание кондиционера', 3000, 90, 5),
+('avtomotors36', 'Диагностика ходовой части', 1500, 60, 0),
+('avtomotors36', 'Диагностика двигателя', 2500, 90, 1),
+('avtomotors36', 'Шиномонтаж (4 колеса)', 2400, 60, 2),
+('bayer36', 'Замена масла и фильтров', 1800, 45, 0),
+('bayer36', 'Диагностика ходовой части', 1500, 60, 1),
+('bayer36', 'Ремонт выхлопной системы', 2500, 90, 2),
+('bayer36', 'Диагностика двигателя', 2500, 90, 3),
+('bayer36', 'Компьютерная диагностика', 1500, 45, 4),
+('bayer36', 'Обслуживание кондиционера', 3000, 90, 5),
+('beep-stop', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('beep-stop', 'Компьютерная диагностика', 1500, 45, 1),
+('beep-stop', 'Диагностика ходовой части', 1500, 60, 2),
+('beep-stop', 'Осмотр и расчёт кузовного ремонта', 1000, 60, 3),
+('beep-stop', 'Ремонт выхлопной системы', 2500, 90, 4),
+('beep-stop', 'Диагностика двигателя', 2500, 90, 5),
+('black-fish-36', 'Тюнинг: консультация и расчёт', 1000, 60, 0),
+('black-fish-36', 'Антикоррозийная обработка', 8000, 240, 1),
+('black-fish-36', 'Установка автозвука', 5000, 120, 2),
+('black-fish-36', 'Диагностика ходовой части', 1500, 60, 3),
+('black-style-auto', 'Ремонт стартера и генератора', 3000, 120, 0),
+('black-style-auto', 'Диагностика двигателя', 2500, 90, 1),
+('black-style-auto', 'Диагностика МКПП', 2500, 90, 2),
+('black-style-auto', 'Компьютерная диагностика', 1500, 45, 3),
+('black-style-auto', 'Диагностика ходовой части', 1500, 60, 4),
+('black-style-auto', 'Ремонт выхлопной системы', 2500, 90, 5),
+('breach-auto', 'Осмотр и расчёт кузовного ремонта', 1000, 60, 0),
+('breach-auto', 'Диагностика ходовой части', 1500, 60, 1),
+('carbox7', 'Диагностика ходовой части', 1500, 60, 0),
+('carbox7', 'Диагностика двигателя', 2500, 90, 1),
+('carbox7', 'Чистка и ремонт инжекторов', 3500, 120, 2),
+('carbox7', 'Замена масла и фильтров', 1800, 45, 3),
+('dg-service', 'Диагностика ходовой части', 1500, 60, 0),
+('dg-service', 'Замена масла и фильтров', 1800, 45, 1),
+('dg-service', 'Компьютерная диагностика', 1500, 45, 2),
+('dg-service', 'Ремонт выхлопной системы', 2500, 90, 3),
+('dg-service', 'Обслуживание кондиционера', 3000, 90, 4),
+('dg-service', 'Диагностика двигателя', 2500, 90, 5),
+('dmauto36', 'Диагностика ходовой части', 1500, 60, 0),
+('dmauto36', 'Диагностика двигателя', 2500, 90, 1),
+('dmauto36', 'Замена масла и фильтров', 1800, 45, 2),
+('dmauto36', 'Компьютерная диагностика', 1500, 45, 3),
+('dmauto36', 'Шиномонтаж (4 колеса)', 2400, 60, 4),
+('dr-car-36', 'Диагностика МКПП', 2500, 90, 0),
+('dr-car-36', 'Ремонт выхлопной системы', 2500, 90, 1),
+('dr-car-36', 'Диагностика дизельного двигателя', 3000, 90, 2),
+('dr-car-36', 'Диагностика рулевой рейки', 2500, 90, 3),
+('dr-car-36', 'Диагностика турбины', 3000, 90, 4),
+('dr-car-36', 'Диагностика электрики', 2000, 90, 5),
+('12-vol-t', 'Обслуживание кондиционера', 3000, 90, 0),
+('12-vol-t', 'Диагностика электрики', 2000, 90, 1),
+('12-vol-t', 'Компьютерная диагностика', 1500, 45, 2),
+('12-vol-t', 'Установка сигнализации', 6000, 180, 3),
+('12-vol-t', 'Установка автозвука', 5000, 120, 4),
+('136avto', 'Диагностика ходовой части', 1500, 60, 0),
+('136avto', 'Шиномонтаж (4 колеса)', 2400, 60, 1),
+('136avto', 'Обслуживание кондиционера', 3000, 90, 2),
+('136avto', 'Диагностика электрики', 2000, 90, 3),
+('136avto', 'Диагностика двигателя', 2500, 90, 4),
+('1911', 'Замена масла и фильтров', 1800, 45, 0),
+('1911', 'Компьютерная диагностика', 1500, 45, 1),
+('1911', 'Ремонт стартера и генератора', 3000, 120, 2),
+('1911', 'Диагностика МКПП', 2500, 90, 3),
+('1911', 'Диагностика АКПП', 2500, 90, 4),
+('1911', 'Тюнинг: консультация и расчёт', 1000, 60, 5),
+('1996', 'Развал-схождение', 2500, 60, 0),
+('1996', 'Замена масла и фильтров', 1800, 45, 1),
+('1996', 'Диагностика ходовой части', 1500, 60, 2),
+('1996', 'Шиномонтаж (4 колеса)', 2400, 60, 3),
+('1996', 'Диагностика двигателя', 2500, 90, 4),
+('4x4-vrn', 'Диагностика ходовой части', 1500, 60, 0),
+('4x4-vrn', 'Диагностика дизельного двигателя', 3000, 90, 1),
+('4x4-vrn', 'Диагностика двигателя', 2500, 90, 2),
+('4x4-vrn', 'Тюнинг: консультация и расчёт', 1000, 60, 3),
+('4x4-vrn', 'Обслуживание кондиционера', 3000, 90, 4),
+('4x4-vrn', 'Ремонт выхлопной системы', 2500, 90, 5),
+('789', 'Обслуживание кондиционера', 3000, 90, 0),
+('789', 'Ремонт стартера и генератора', 3000, 120, 1),
+('789', 'Диагностика турбины', 3000, 90, 2),
+('789', 'Сезонное хранение шин', 2500, 30, 3),
+('789', 'Диагностика дизельного двигателя', 3000, 90, 4),
+('800-oborotov-oyl', 'Замена масла и фильтров', 1800, 45, 0),
+('800-oborotov-oyl', 'Диагностика ходовой части', 1500, 60, 1),
+('800-oborotov-oyl', 'Компьютерная диагностика', 1500, 45, 2),
+('800-oborotov-oyl', 'Обслуживание кондиционера', 3000, 90, 3),
+('a1', 'Комплексная мойка', 1500, 60, 0),
+('a1', 'Шиномонтаж (4 колеса)', 2400, 60, 1),
+('a1', 'Замена масла и фильтров', 1800, 45, 2),
+('a1', 'Обслуживание кондиционера', 3000, 90, 3),
+('a1', 'Диагностика ходовой части', 1500, 60, 4),
+('a1', 'Детейлинг кузова', 12000, 300, 5),
+('ads', 'Компьютерная диагностика', 1500, 45, 0),
+('alliance', 'Диагностика ходовой части', 1500, 60, 0),
+('alliance', 'Диагностика двигателя', 2500, 90, 1),
+('alliance', 'Ремонт выхлопной системы', 2500, 90, 2),
+('alliance', 'Замена масла и фильтров', 1800, 45, 3),
+('alliance', 'Ремонт стартера и генератора', 3000, 120, 4),
+('alliance', 'Компьютерная диагностика', 1500, 45, 5),
+('alv', 'Осмотр и расчёт кузовного ремонта', 1000, 60, 0),
+('alv', 'Диагностика ходовой части', 1500, 60, 1),
+('alv', 'Диагностика электрики', 2000, 90, 2),
+('alv', 'Диагностика двигателя', 2500, 90, 3),
+('alv', 'Замена масла и фильтров', 1800, 45, 4),
+('alv', 'Ремонт стартера и генератора', 3000, 120, 5),
+('art-servis', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('art-servis', 'Диагностика двигателя', 2500, 90, 1),
+('art-servis', 'Компьютерная диагностика', 1500, 45, 2),
+('art-servis', 'Диагностика АКПП', 2500, 90, 3),
+('aservise', 'Замена масла и фильтров', 1800, 45, 0),
+('aservise', 'Компьютерная диагностика', 1500, 45, 1),
+('aservise', 'Диагностика двигателя', 2500, 90, 2),
+('aservise', 'Обслуживание кондиционера', 3000, 90, 3),
+('aservise', 'Диагностика МКПП', 2500, 90, 4),
+('aservise', 'Ремонт выхлопной системы', 2500, 90, 5),
+('astra-motors', 'Развал-схождение', 2500, 60, 0),
+('astra-motors', 'Установка сигнализации', 6000, 180, 1),
+('astra-motors', 'Диагностика ходовой части', 1500, 60, 2),
+('astra-motors', 'Ремонт выхлопной системы', 2500, 90, 3),
+('astra-motors', 'Диагностика АКПП', 2500, 90, 4),
+('astra-motors', 'Диагностика дизельного двигателя', 3000, 90, 5),
+('auto-dent-ditailing', 'Замена и ремонт автостёкол', 4000, 120, 0),
+('auto-dent-ditailing', 'Осмотр и расчёт кузовного ремонта', 1000, 60, 1),
+('auto-dent-ditailing', 'Детейлинг кузова', 12000, 300, 2),
+('autogear', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('autogear', 'Ремонт стартера и генератора', 3000, 120, 1),
+('autogear', 'Компьютерная диагностика', 1500, 45, 2),
+('autogear', 'Диагностика двигателя', 2500, 90, 3),
+('autogear', 'Диагностика ходовой части', 1500, 60, 4),
+('autolightsworkshop', 'Установка и ремонт оптики', 3000, 90, 0),
+('avbmotorsport', 'Компьютерная диагностика', 1500, 45, 0),
+('avbmotorsport', 'Чистка и ремонт инжекторов', 3500, 120, 1),
+('avtomatik-vrn', 'Диагностика ходовой части', 1500, 60, 0),
+('avtomatik-vrn', 'Компьютерная диагностика', 1500, 45, 1),
+('avtomatik-vrn', 'Диагностика АКПП', 2500, 90, 2),
+('avtomatik-vrn', 'Шиномонтаж (4 колеса)', 2400, 60, 3),
+('avtomatik-vrn', 'Замена масла и фильтров', 1800, 45, 4),
+('avtoservis-36', 'Обслуживание кондиционера', 3000, 90, 0),
+('avtoservis-36', 'Диагностика ходовой части', 1500, 60, 1),
+('avtoservis-36', 'Диагностика дизельного двигателя', 3000, 90, 2),
+('avtoservis-36', 'Диагностика двигателя', 2500, 90, 3),
+('avtoservis-36', 'Развал-схождение', 2500, 60, 4),
+('avtoservis-36', 'Шиномонтаж (4 колеса)', 2400, 60, 5),
+('avto-srs', 'Тюнинг: консультация и расчёт', 1000, 60, 0),
+('bavarec-auto', 'Компьютерная диагностика', 1500, 45, 0),
+('bavarec-auto', 'Диагностика дизельного двигателя', 3000, 90, 1),
+('bavarec-auto', 'Диагностика двигателя', 2500, 90, 2),
+('bavarec-auto', 'Диагностика электрики', 2000, 90, 3),
+('bbs', 'Детейлинг кузова', 12000, 300, 0),
+('bbs', 'Замена масла и фильтров', 1800, 45, 1),
+('bbs', 'Компьютерная диагностика', 1500, 45, 2),
+('bbs', 'Развал-схождение', 2500, 60, 3),
+('bbs', 'Диагностика ходовой части', 1500, 60, 4),
+('bbs', 'Шиномонтаж (4 колеса)', 2400, 60, 5),
+('beautiful-car', 'Осмотр и расчёт кузовного ремонта', 1000, 60, 0),
+('beautiful-car', 'Шиномонтаж (4 колеса)', 2400, 60, 1),
+('beautiful-car', 'Диагностика ходовой части', 1500, 60, 2),
+('beautiful-car', 'Замена масла и фильтров', 1800, 45, 3),
+('beautiful-car', 'Тюнинг: консультация и расчёт', 1000, 60, 4),
+('black-bear-garage', 'Замена масла и фильтров', 1800, 45, 0),
+('black-bear-garage', 'Диагностика АКПП', 2500, 90, 1),
+('black-bear-garage', 'Диагностика МКПП', 2500, 90, 2),
+('black-bear-garage', 'Диагностика ходовой части', 1500, 60, 3),
+('body-style', 'Осмотр и расчёт кузовного ремонта', 1000, 60, 0),
+('body-style', 'Диагностика ходовой части', 1500, 60, 1),
+('body-style', 'Обслуживание кондиционера', 3000, 90, 2),
+('body-style', 'Диагностика дизельного двигателя', 3000, 90, 3),
+('body-style', 'Установка и ремонт оптики', 3000, 90, 4),
+('box-13', 'Диагностика ходовой части', 1500, 60, 0),
+('car-service', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('car-service', 'Диагностика МКПП', 2500, 90, 1),
+('car-service', 'Диагностика дизельного двигателя', 3000, 90, 2),
+('car-service', 'Диагностика двигателя', 2500, 90, 3),
+('car-service', 'Диагностика ходовой части', 1500, 60, 4),
+('carhelp', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('carhelp', 'Диагностика ходовой части', 1500, 60, 1),
+('carhelp', 'Ремонт стартера и генератора', 3000, 120, 2),
+('carhelp', 'Осмотр и расчёт кузовного ремонта', 1000, 60, 3),
+('carhelp', 'Компьютерная диагностика', 1500, 45, 4),
+('carhelp', 'Обслуживание кондиционера', 3000, 90, 5),
+('carzone', 'Диагностика ходовой части', 1500, 60, 0),
+('carzone', 'Диагностика дизельного двигателя', 3000, 90, 1),
+('carzone', 'Диагностика двигателя', 2500, 90, 2),
+('carzone', 'Диагностика АКПП', 2500, 90, 3),
+('carzone', 'Диагностика МКПП', 2500, 90, 4),
+('carzone', 'Шиномонтаж (4 колеса)', 2400, 60, 5),
+('cepsa', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('cepsa', 'Диагностика ходовой части', 1500, 60, 1),
+('cepsa', 'Замена масла и фильтров', 1800, 45, 2),
+('cepsa', 'Диагностика двигателя', 2500, 90, 3),
+('cepsa', 'Диагностика дизельного двигателя', 3000, 90, 4),
+('cepsa', 'Компьютерная диагностика', 1500, 45, 5),
+('energy-service', 'Диагностика ходовой части', 1500, 60, 0),
+('energy-service', 'Диагностика дизельного двигателя', 3000, 90, 1),
+('energy-service', 'Диагностика двигателя', 2500, 90, 2),
+('energy-service', 'Компьютерная диагностика', 1500, 45, 3),
+('energy-service', 'Замена масла и фильтров', 1800, 45, 4),
+('euromotors', 'Диагностика дизельного двигателя', 3000, 90, 0),
+('euromotors', 'Диагностика АКПП', 2500, 90, 1),
+('euromotors', 'Диагностика ходовой части', 1500, 60, 2),
+('euromotors', 'Обслуживание кондиционера', 3000, 90, 3),
+('euromotors', 'Компьютерная диагностика', 1500, 45, 4),
+('euromotors', 'Диагностика двигателя', 2500, 90, 5),
+('expert-in-auto-ternovoye', 'Диагностика ходовой части', 1500, 60, 0),
+('expert-in-auto-ternovoye', 'Шиномонтаж (4 колеса)', 2400, 60, 1),
+('expert-in-auto-ternovoye', 'Комплексная мойка', 1500, 60, 2),
+('expert-in-auto-ternovoye', 'Компьютерная диагностика', 1500, 45, 3),
+('expert-in-auto-ternovoye', 'Диагностика электрики', 2000, 90, 4),
+('expert-in-auto-ternovoye', 'Замена масла и фильтров', 1800, 45, 5),
+('express-car-shilovo', 'Шиномонтаж (4 колеса)', 2400, 60, 0),
+('express-car-shilovo', 'Диагностика ходовой части', 1500, 60, 1),
+('express-car-shilovo', 'Замена масла и фильтров', 1800, 45, 2),
+('express-car-shilovo', 'Компьютерная диагностика', 1500, 45, 3),
+('express-car-shilovo', 'Развал-схождение', 2500, 60, 4),
+('express-car-shilovo', 'Ремонт выхлопной системы', 2500, 90, 5);
+insert into service_prices_by_class (service_id, vehicle_class, price, duration_min)
+select s.id, c.cls, (round(s.base_price * c.k / 10) * 10)::int, ceil(s.base_duration * c.d / 5)::int * 5
+from services s, (values ('sedan', 1.0, 1.0), ('crossover', 1.25, 1.2), ('minivan', 1.5, 1.4)) as c(cls, k, d)
+where s.shop_id in ('9-avenue', 'ard', 'autohata36', 'autohunter', 'avto-reviz', 'avtomotors36', 'bayer36', 'beep-stop', 'black-fish-36', 'black-style-auto', 'breach-auto', 'carbox7', 'dg-service', 'dmauto36', 'dr-car-36', '12-vol-t', '136avto', '1911', '1996', '4x4-vrn', '789', '800-oborotov-oyl', 'a1', 'ads', 'alliance', 'alv', 'art-servis', 'aservise', 'astra-motors', 'auto-dent-ditailing', 'autogear', 'autolightsworkshop', 'avbmotorsport', 'avtomatik-vrn', 'avtoservis-36', 'avto-srs', 'bavarec-auto', 'bbs', 'beautiful-car', 'black-bear-garage', 'body-style', 'box-13', 'car-service', 'carhelp', 'carzone', 'cepsa', 'energy-service', 'euromotors', 'expert-in-auto-ternovoye', 'express-car-shilovo') on conflict do nothing;
+================================================================================
+### ФАЙЛ: scripts/generate_from_xlsx.py
+================================================================================
+"""Генерация сайтов-тенантов из xlsx: python3 scripts/generate_from_xlsx.py data/services.xlsx"""
+import sys, re, json, csv, pathlib
+import pandas as pd
+
+src = sys.argv[1] if len(sys.argv) > 1 else 'data/services.xlsx'
+df = pd.concat(pd.read_excel(src, sheet_name=None, dtype=str).values(), ignore_index=True).fillna('')
+df['key'] = df['2GIS URL'].where(df['2GIS URL'] != '', df['Наименование'] + df['Адрес'])
+df = df.drop_duplicates('key').reset_index(drop=True)
+
+TR = dict(zip('абвгдеёжзийклмнопрстуфхцчшщъыьэюя', 'a b v g d e e zh z i y k l m n o p r s t u f kh ts ch sh sch - y - e yu ya'.split()))
+def slugify(s):
+    t = ''.join(TR.get(c, c) for c in s.lower())
+    return re.sub(r'[^a-z0-9]+', '-', t).strip('-') or 'shop'
+
+def phone(raw):
+    d = re.sub(r'\D', '', raw.split('(')[0])
+    if len(d) == 11 and d[0] in '78': d = '7' + d[1:]
+    if len(d) == 10: d = '7' + d
+    return f'+7 {d[1:4]} {d[4:7]}-{d[7:9]}-{d[9:11]}' if len(d) == 11 else raw
+
+# рубрика -> (услуга, ориентировочная цена, минуты). ЦЕНЫ — ЗАГЛУШКИ, заменить реальными.
+MAP = {
+ 'Замена масла': ('Замена масла и фильтров', 1800, 45),
+ 'Компьютерная диагностика автомобилей': ('Компьютерная диагностика', 1500, 45),
+ 'Шиномонтаж': ('Шиномонтаж (4 колеса)', 2400, 60),
+ 'Развал-схождение': ('Развал-схождение', 2500, 60),
+ 'Ремонт ходовой части автомобиля': ('Диагностика ходовой части', 1500, 60),
+ 'Обслуживание автомобильных климатических систем': ('Обслуживание кондиционера', 3000, 90),
+ 'Детейлинг': ('Детейлинг кузова', 12000, 300),
+ 'Автомойки': ('Комплексная мойка', 1500, 60),
+ 'Кузовной ремонт': ('Осмотр и расчёт кузовного ремонта', 1000, 60),
+ 'Ремонт бензиновых двигателей': ('Диагностика двигателя', 2500, 90),
+ 'Ремонт дизельных двигателей': ('Диагностика дизельного двигателя', 3000, 90),
+ 'Ремонт АКПП': ('Диагностика АКПП', 2500, 90),
+ 'Ремонт МКПП': ('Диагностика МКПП', 2500, 90),
+ 'Ремонт стартеров и генераторов': ('Ремонт стартера и генератора', 3000, 120),
+ 'Ремонт электронных систем авто': ('Диагностика электрики', 2000, 90),
+ 'Ремонт выхлопных систем': ('Ремонт выхлопной системы', 2500, 90),
+ 'Установка и ремонт автооптики': ('Установка и ремонт оптики', 3000, 90),
+ 'Ремонт инжекторов': ('Чистка и ремонт инжекторов', 3500, 120),
+ 'Тюнинг': ('Тюнинг: консультация и расчёт', 1000, 60),
+ 'Автозвук': ('Установка автозвука', 5000, 120),
+ 'Автосигнализации': ('Установка сигнализации', 6000, 180),
+ 'Антикоррозийная обработка авто': ('Антикоррозийная обработка', 8000, 240),
+ 'Хранение шин': ('Сезонное хранение шин', 2500, 30),
+ 'Установка и ремонт автостёкол': ('Замена и ремонт автостёкол', 4000, 120),
+ 'Ремонт турбин': ('Диагностика турбины', 3000, 90),
+ 'Ремонт рулевых реек': ('Диагностика рулевой рейки', 2500, 90),
+}
+FALLBACK = ('Диагностика и консультация', 1500, 60)
+ACCENTS = ['#FF4D00', '#00E5FF', '#FFC400', '#39FF88', '#FF2D6F', '#7C5CFF']
+q = lambda s: "'" + s.replace("'", "''") + "'"
+
+used, rows, sql_shops, sql_services, ids = set(), [], [], [], []
+for i, r in df.iterrows():
+    name = r['Наименование'].strip()
+    slug = base = slugify(name); n = 2
+    while slug in used or slug == 'demo': slug = f'{base}-{n}'; n += 1
+    used.add(slug); ids.append(slug)
+    rubrics = [x.strip() for x in r['Рубрики'].split(';') if x.strip()]
+    svcs, seen = [], set()
+    for rb in rubrics:
+        if rb in MAP and MAP[rb][0] not in seen:
+            seen.add(MAP[rb][0]); svcs.append(MAP[rb])
+    svcs = (svcs or [FALLBACK])[:6]
+    city = r['Город'].strip() or 'Воронеж'
+    main = rubrics[0] if rubrics else 'Автосервис'
+    desc = f"{name} — {main.lower()} ({city}). " + (f"Работаем с: {', '.join(x.lower() for x in rubrics[1:5])}. " if len(rubrics) > 1 else '') + 'Выберите услугу и удобное время — запись займёт минуту.'
+    cfg = {
+        'id': slug, 'name': name, 'tagline': f'{main}. Онлайн-запись без звонков.', 'description': desc,
+        'phone': phone(r['Телефон']), 'address': (r['Адрес'].strip() + f', {city}').strip(', '),
+        'hours': 'Уточняйте по телефону', 'timezone': 'Europe/Moscow', 'currency': '₽', 'accent': ACCENTS[i % len(ACCENTS)],
+    }
+    for k, col in (('whatsapp', 'WhatsApp'), ('telegram', 'Telegram'), ('twoGis', '2GIS URL'), ('rating', 'Рейтинг'), ('reviews', 'Количество отзывов')):
+        if r[col].strip(): cfg[k] = r[col].strip()
+    body = ',\n'.join(f'  {k}: {json.dumps(v, ensure_ascii=False)}' for k, v in cfg.items())
+    d = pathlib.Path(f'src/tenants/{slug}'); d.mkdir(parents=True, exist_ok=True)
+    (d / 'config.ts').write_text(
+        "import type { TenantConfig } from '../types'\nimport { DEFAULT_CLASSES, DEFAULT_FAQ } from '../defaults'\n\n"
+        f"export const config: TenantConfig = {{\n{body},\n  vehicleClasses: DEFAULT_CLASSES,\n  faq: DEFAULT_FAQ\n}}\n", encoding='utf-8')
+    sql_shops.append(f'({q(slug)}, {q(name)})')
+    for j, (sn, price, dur) in enumerate(svcs):
+        sql_services.append(f'({q(slug)}, {q(sn)}, {price}, {dur}, {j})')
+    rows.append([name, slug, f'/s/{slug}', cfg['phone'], cfg['address'], cfg.get('whatsapp', ''), cfg.get('telegram', ''), cfg.get('twoGis', '')])
+
+idlist = ', '.join(q(x) for x in ids)
+pathlib.Path('supabase/tenants_voronezh.sql').write_text(f"""-- Сгенерировано scripts/generate_from_xlsx.py. Запускать ОДИН раз после schema.sql.
+-- ЦЕНЫ И ДЛИТЕЛЬНОСТИ — заглушки; график по умолчанию Пн–Сб, 2 бокса. Владельцы (shops.owner_id) не заданы.
+insert into shops (id, name) values
+{',\n'.join(sql_shops)}
+on conflict do nothing;
+insert into settings (shop_id) select id from shops where id in ({idlist}) on conflict do nothing;
+insert into bays (shop_id, name) select s.id, 'Бокс ' || g from shops s, generate_series(1, 2) g
+  where s.id in ({idlist}) and not exists (select 1 from bays b where b.shop_id = s.id);
+insert into services (shop_id, name, base_price, base_duration, sort) values
+{',\n'.join(sql_services)};
+insert into service_prices_by_class (service_id, vehicle_class, price, duration_min)
+select s.id, c.cls, (round(s.base_price * c.k / 10) * 10)::int, ceil(s.base_duration * c.d / 5)::int * 5
+from services s, (values ('sedan', 1.0, 1.0), ('crossover', 1.25, 1.2), ('minivan', 1.5, 1.4)) as c(cls, k, d)
+where s.shop_id in ({idlist}) on conflict do nothing;
+""", encoding='utf-8')
+with open('tenants_index.csv', 'w', newline='', encoding='utf-8-sig') as f:
+    w = csv.writer(f); w.writerow(['Название', 'shop_id', 'Путь', 'Телефон', 'Адрес', 'WhatsApp', 'Telegram', '2GIS']); w.writerows(rows)
+print(len(ids), 'сайтов')
